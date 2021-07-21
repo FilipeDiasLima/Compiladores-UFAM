@@ -1,0 +1,142 @@
+/*
+
+Montador para JVM
+Marco, 2013
+Classes Code e Operand baseadas nas da universidade de Linz
+
+*/
+
+import java.util.Hashtable;
+import java.util.Enumeration;
+
+COMPILER Montador
+
+Hashtable vrotulos;	/* rotulo -> adr */
+Hashtable vpcsToFix;	/* pc -> rotulo */
+int maxGlobalEnd;	/* apenas para verificar maior endereco global enderecado */
+Code objCode;
+
+CHARACTERS
+	semAspas 	= ANY - '"'.
+	letra 		= "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".
+	digito 		= "0123456789".
+
+TOKENS
+	rotulo 		= (letra | "_") {letra | digito | "_"}.
+	strzConst 	= '"' {semAspas} '"'.
+	num  		= ['-'] digito { digito } .
+
+COMMENTS FROM "/*" TO "*/" NESTED
+
+IGNORE '\r' + '\n' + '\t'
+
+PRODUCTIONS
+
+	Montador			(.      
+							vrotulos = new Hashtable();
+							vpcsToFix = new Hashtable();
+							maxGlobalEnd = -1;
+							objCode = new Code();
+							objCode.setMainPC();	/* se label "_main_" nao encontrada, mainPc = 0 */        		
+						.)
+	= {Instrucao}
+						(.
+							/* fix rotulos */
+        					Enumeration em = vpcsToFix.keys();
+        					while(em.hasMoreElements())
+        					{
+            					Integer pctofix = (Integer) em.nextElement();
+            					String r = (String) vpcsToFix.get(pctofix);
+            					Integer correctpc = (Integer) vrotulos.get(r);
+								//System.out.println(">>> " + r + " " + pctofix + " " + correctpc);
+								objCode.put2(pctofix, correctpc);
+        					}
+							/* define global area */
+							if (maxGlobalEnd > -1)
+								objCode.setDataSize(maxGlobalEnd + 1);			
+						.)
+	.
+
+	Instrucao 
+		= [rotulo 		(. 			
+						    String r = t.val;
+						    if (r.equals("_main_")) 
+							    objCode.setMainPC();
+						    vrotulos.put(r, new Integer(objCode.getPC()));
+						    //System.out.println(">>> " + r + " " + objCode.getPC());					
+						.)
+		":"] 
+		CodMaquina
+	.
+ 	
+	CodMaquina 
+		= "load"		(. 	objCode.put(Code.load); .) 
+		  Byte
+		| "store" 		(. 	objCode.put(Code.store); .)
+		  Byte
+		| "getstatic"	(. 	objCode.put(Code.getstatic); .) 
+		  Short
+		| "putstatic" 	(. 	objCode.put(Code.putstatic); .)
+		  Short			(.	
+						    Integer end = Integer.parseInt(t.val); 
+						    if (end > maxGlobalEnd)
+						        maxGlobalEnd = end;
+						.)
+		| "const" 		(. 	objCode.put(Code.const_); .)
+		  Word
+		| "add"			(. 	objCode.put(Code.add); .)
+		| "sub"			(. 	objCode.put(Code.sub); .)
+		| "mul"			(. 	objCode.put(Code.mul); .)
+		| "div"			(. 	objCode.put(Code.div); .)
+		| "rem"			(. 	objCode.put(Code.rem); .)
+		| "neg"			(. 	objCode.put(Code.neg); .)
+		| "newarray"	(. 	objCode.put(Code.newarray); .)
+		| "aload"		(. 	objCode.put(Code.aload); .)
+		| "astore"		(. 	objCode.put(Code.astore); .)
+		| "arraylength"	(. 	objCode.put(Code.arraylength); .)
+		| "pop"			(. 	objCode.put(Code.pop); .)
+		| "jmp" 		(. 	objCode.put(Code.jmp); .)
+		  Rotulo
+		| "jeq" 		(. 	objCode.put(Code.jeq); .)
+		  Rotulo
+		| "jne" 		(. 	objCode.put(Code.jne); .)
+		  Rotulo
+		| "jlt" 		(. 	objCode.put(Code.jlt); .)
+		  Rotulo
+		| "jle" 		(. 	objCode.put(Code.jle); .)
+		  Rotulo
+		| "jgt" 		(. 	objCode.put(Code.jgt); .)
+		  Rotulo
+		| "jge" 		(. 	objCode.put(Code.jge); .)
+		  Rotulo
+		| "call" 		(. 	objCode.put(Code.call); .)
+		  Rotulo
+		| "return"		(. 	objCode.put(Code.return_); .)
+		| "enter" 		(. 	objCode.put(Code.enter); .)
+		  Byte Byte		  
+		| "exit"		(. 	objCode.put(Code.exit); .)
+		| "scani"		(. 	objCode.put(Code.scani); .)
+		| "printi"		(. 	objCode.put(Code.printi); .)
+		| "prints" 	
+		  strzConst		(.
+						    String s = t.val.substring(1, t.val.length() - 1);
+						    objCode.putPrintStrz(s);
+						.)
+		| "trap"		(. 	objCode.put(Code.trap); .) 
+		  Byte
+	.
+	Rotulo = rotulo		(. 					
+						    vpcsToFix.put(new Integer(objCode.getPC()), t.val);
+						    objCode.put2(-1); /* address has to be fixed */
+						.)
+	.
+	Byte = num			(. 	objCode.put(Integer.parseInt(t.val)); .)
+	.
+	Short = num			(. 	objCode.put2(Integer.parseInt(t.val)); .)
+	.
+	Word = num			(. 	objCode.put4(Integer.parseInt(t.val)); .)
+	.
+
+END Montador.
+
+

@@ -1,0 +1,212 @@
+import java.io.*;
+import java.util.*;
+
+class Global {
+  public ArrayList<Funcao> funcoes;
+
+  public Global() {
+    funcoes = new ArrayList<Funcao>();
+  }
+
+  public void addFuncion(Funcao funcao) {
+    funcoes.add(funcao);
+  }
+
+  public void getFunctions() {
+    for(int i=0;i<funcoes.size()-1;i++) {
+      System.out.println(funcoes.get(i).retornaFuncao());
+    }
+  }
+}
+
+class Funcao {
+  String nome;
+  ArrayList<String> parametros = new ArrayList<String>();
+
+  public Funcao(String nome) {
+    this.nome = nome;
+  }
+
+  public void setName(String nome) {
+    this.nome = nome;
+  }
+
+  public String getName() {
+    return this.nome;
+  }
+
+  public void addParam(String param) {
+    parametros.add(param);
+  }
+
+  public String getParams() {
+    String params = "";
+    for(int i=0;i<parametros.size();i++) {
+      if(i+1 == parametros.size()) {
+        params += parametros.get(i);  
+      } else {
+        params += parametros.get(i) + ", ";
+      }
+    }
+    return params;
+  }
+
+  public String retornaFuncao() {
+    return "def " + nome + "(" + getParams() + "):";
+  }
+}
+
+class Bloco {
+  NDesig nd; // nd(string, boolean)
+  Instruction instrucoes;
+}
+
+class Instruction {
+  String instr;
+
+  public Instruction(String instr) {
+    this.instr = instr;
+  }
+}
+
+class NDesig {
+	String nome;
+	boolean vec;
+	public NDesig(String n, boolean v) {
+		nome = n;
+		vec = v;
+	}
+	public String getName() {
+		return nome;
+	}
+	public boolean vetor() {
+		return vec;
+	}
+}
+
+COMPILER Python
+
+  Global global;
+  Funcao func;
+
+  public void erro(String msg) {
+		errors.SemErr(t.line, t.col, msg);
+	}
+
+CHARACTERS
+  semAspas 	= ANY - '"'.
+	letra 		= "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_".
+	digito 		= "0123456789".
+
+TOKENS
+  id 		    = letra {letra | digito}.
+	strConst 	= '"' {semAspas} '"'.
+	num 		= ['-'] digito { digito } .
+
+
+COMMENTS FROM "/*" TO "*/" NESTED
+
+IGNORE '\r' + '\n' + '\t'
+
+PRODUCTIONS
+  Python                      (. global = new Global();
+                                 func = new Funcao("main"); 
+                                 global.addFuncion(func); .)
+  = {DeclConst}
+    {Definicao}               (. global.getFunctions(); .)
+    .         
+
+  DeclConst = "const" id "=" num ";" .
+
+	Definicao                   (. String nome; NDesig nd; .)
+  = ( Tipo | "void") 
+    DesigI<out nd>          
+    ( DeclVar<nd>
+    | DeclFuncao<nd>           (. func = new Funcao(""); 
+                                  global.addFuncion(func); .)             
+    )
+  .
+
+	DeclVar<NDesig nd>           (. NDesig ndi; .)
+  = 
+    {"," DesigI<out ndi>
+    } ";"
+  .
+
+  DeclFuncao
+    <NDesig nd>                (. NDesig ndi; .)
+  =                            (. func.setName(nd.getName()); .) 
+    "("
+    [ Tipo 
+      DesigI<out ndi>          (. func.addParam(ndi.getName()); .)
+    {"," Tipo 
+      DesigI<out ndi>          (. func.addParam(ndi.getName()); .)
+    } 
+    ]")"                        
+  CBlock                       
+  .
+	
+	Tipo = "int".		
+
+	DesigI<out NDesig n>        (. boolean vet = false; .)
+  = id                        (. String nome = t.val; .)
+    ["[" "]"                  (. vet = true; .)
+    ]                         (. n = new NDesig(nome, vet); .)
+  .                         
+
+	CBlock = "{" {Definicao | Instrucao} "}".
+
+	Instrucao = Designador 
+      ( 
+      Assinalamento 
+      | Parametros 
+      ) ";"
+      | While
+      | For
+      | IfElse
+      | Return
+      | Printf
+      | CBlock
+      | ";"
+    .
+
+  Assinalamento = "=" Expr.
+
+	While = "while" "(" Condicao ")" Instrucao.
+
+	For = "for" "(" Designador Assinalamento ";" Condicao ";" Designador Assinalamento ")" Instrucao.
+
+	IfElse = "if" "(" Condicao ")" Instrucao ("else" Instrucao | ).
+
+	Return = "return" (Expr | ) ";".
+
+	Printf = "printf" "(" ( strConst | Expr ) {"," ( strConst | Expr ) } ")" ";".
+
+	Parametros = "(" [ Expr {"," Expr } ] ")".
+
+	Condicao = Expr OpRel Expr.
+
+	OpRel = "=="
+      | "!="
+      | ">"
+      | ">="
+      | "<"
+      | "<=".
+
+	Expr = ( Termo | "-" Termo ) {( "+" | "-" ) Termo }.	
+
+	Termo = Fator
+      {(  "*"
+        | "/"
+        | "%"
+       ) Fator }.
+
+	Fator = Designador [ Parametros ] 
+    | num 
+    | "(" Expr ")" 
+    | "new" Tipo ("[" Expr "]" 
+    | "{" num {"," num } "}" ).
+
+	Designador = id ["[" Expr "]"].
+
+END Python.

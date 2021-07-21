@@ -1,0 +1,434 @@
+import java.io.*;
+import java.util.*;
+
+class Global {
+  public ArrayList<Funcao> funcoes;
+  public ArrayList<String> globalVars;
+
+  public Global() {
+    funcoes = new ArrayList<Funcao>();
+    globalVars = new ArrayList<String>();
+  }
+
+  public void addGlobalVar(String globalVar) {
+    globalVars.add(globalVar);
+  }
+
+  public void addFunction(Funcao funcao) {
+    funcoes.add(funcao);
+  }
+
+  public String getGlobalVars() {
+    String vars="";
+    for(int i=0;i<globalVars.size();i++) {
+      vars += "  " + globalVars.get(i) + " = 0" + "\n";
+    }
+    return vars;
+  }
+
+  public String getGlobalVar(String globalVar) {
+    for(int i=0;i<globalVars.size();i++) {
+      if(globalVars.get(i).equals(globalVar)) {
+        return "_global_." + globalVars.get(i);
+      }
+    }
+    return "";
+  }
+
+  public void getFunctions() {
+    for(int i=0;i<funcoes.size();i++) {
+      System.out.println(funcoes.get(i).retornaFuncao() + "\n");
+    }
+    if(globalVars.size()>0) {
+      System.out.println("class _global_:");
+      System.out.println(getGlobalVars()); 
+    }
+    System.out.println("main()");
+  }
+}
+
+class Funcao {
+  String nome;
+  ArrayList<String> parametros = new ArrayList<String>();
+  Bloco bloco;
+
+  public Funcao() {
+    this.nome = nome;
+  }
+
+  public void setName(String nome) {
+    this.nome = nome;
+  }
+
+  public String getName() {
+    return this.nome;
+  }
+
+  public void addParam(String param) {
+    parametros.add(param);
+  }
+
+  public String getParams() {
+    String params = "";
+    for(int i=0;i<parametros.size();i++) {
+      if(i+1 == parametros.size()) {
+        params += parametros.get(i);  
+      } else {
+        params += parametros.get(i) + ", ";
+      }
+    }
+    return params;
+  }
+
+  public void setBloco(Bloco bloco) {
+    this.bloco = bloco;
+  }
+
+  public String retornaFuncao() {
+    return "def " + nome + "(" + getParams() + "):" + "\n" + bloco.getBloco();
+  }
+}
+
+class Bloco {
+  public ArrayList<Instruction> instrucoes;
+
+  public Bloco() {
+    instrucoes = new ArrayList<Instruction>();
+  }
+
+  public void removeInstrucao(Instruction instr) {
+    this.instrucoes.remove(instr);
+  }
+
+  public void addInstrucao(Instruction instr) {
+    instrucoes.add(instr);
+  }
+
+  public String getBloco() {
+    String bloco="";
+    for(int i=0;i<instrucoes.size();i++) {
+      if(i+1==instrucoes.size()) {
+        bloco += instrucoes.get(i).getInstrucao();
+      } else {
+        bloco += instrucoes.get(i).getInstrucao() + "\n";
+      }
+    }
+    return bloco;
+  }
+}
+
+class Instruction {
+  String instr;
+  NDesig nd;
+
+  public void setInstrucao(String instr, Integer tabs) {
+    String tab="";
+    for(int i=0;i<tabs;i++) {
+      tab+="  ";
+    }
+    this.instr = tab + instr;
+  }
+
+  public String getInstrucao() {
+    return this.instr;
+  }
+}
+
+class NDesig {
+	String nome;
+	boolean vec;
+	public NDesig(String n, boolean v) {
+		nome = n;
+		vec = v;
+	}
+	public String getName() {
+		return nome;
+	}
+	public boolean vetor() {
+		return vec;
+	}
+}
+
+COMPILER Python
+
+  Global global;
+  Funcao func;
+  Bloco bloco;
+  Instruction instr;
+  Integer cont=0;
+
+  public void erro(String msg) {
+		errors.SemErr(t.line, t.col, msg);
+	}
+
+CHARACTERS
+  semAspas 	= ANY - '"'.
+	letra 		= "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_".
+	digito 		= "0123456789".
+
+TOKENS
+  id 		    = letra {letra | digito}.
+	strConst 	= '"' {semAspas} '"'.
+	num 		= ['-'] digito { digito } .
+
+
+COMMENTS FROM "/*" TO "*/" NESTED
+
+IGNORE '\r' + '\n' + '\t'
+
+PRODUCTIONS
+  Python                          (. global = new Global();
+                                    func = new Funcao();
+                                    bloco = new Bloco();
+                                    instr = new Instruction();
+                                  .)
+  = 
+  {DeclConst                                      
+  } 
+  {Definicao                     
+  }                                (. global.getFunctions(); .)
+  .         
+
+  DeclConst                        
+  = "const" 
+  id                               
+  "=" num                          
+  ";"                              
+  . 
+
+	Definicao                         (. NDesig nd; .) 
+  = 
+  ( Tipo | "void") 
+  DesigI<out nd>                    
+  ( DeclVar<nd>                     (.  if(cont == 0) {
+                                          global.addGlobalVar(nd.getName());
+                                       } .)
+  | DeclFuncao<nd>                   (. func = new Funcao();
+                                        bloco = new Bloco();  .) 
+  )
+  .
+
+	DeclVar<NDesig nd> 
+  = 
+  {","
+   DesigI<out nd>        
+   } 
+   ";"
+  .
+
+  DeclFuncao<NDesig nd>   (. NDesig ndi; .)
+  = 
+  "("  
+  [ Tipo 
+    DesigI<out ndi>             (. func.addParam(ndi.getName()); .)
+  {"," Tipo 
+    DesigI<out ndi>             (. func.addParam(ndi.getName()); .)
+  } ]
+  ")"                                
+  CBlock                  (.  
+                                  func.setBloco(bloco);
+                                  func.setName(nd.getName());
+                                  global.addFunction(func); .)
+  .
+	
+	Tipo = "int".		
+
+	DesigI<out NDesig nd>               (. nd = null; String nome=""; boolean vet = false; .)
+  = id                                (. nome = t.val; .)
+  ["["                                (. vet = true; .)
+  "]"  
+  ]                                   (. nd = new NDesig(nome, vet); .)
+  .                         
+
+	CBlock        
+  = "{"                 (. cont+=1; .)
+  { Definicao 
+  | Instrucao                        
+  }                                   
+  "}"                   (. cont-=1; .)
+  .
+
+	Instrucao             (. String nome=""; String param; String assina; .)
+  = Designador<out nome>
+    ( 
+      Assinalamento<out assina, nome>
+      | Parametros<out param>       (. instr = new Instruction();
+                                       String p;
+                                       if(nome.contains("scanf")) {
+                                        param = param.replace("(","");
+                                        param = param.replace(")","");
+                                        p = param + " = int(input())"; 
+                                       } else {
+                                        p = nome + param;
+                                       }
+                                       instr.setInstrucao(p, cont);
+                                       bloco.addInstrucao(instr); .) 
+    ) ";"
+    | While
+    | For
+    | IfElse
+    | Return
+    | Printf
+    | CBlock
+    | ";"
+  .
+
+  Assinalamento<out String assina, String nome>      (. String exp=""; instr = new Instruction(); assina=""; .)
+  = "=" Expr<out exp>                                (. if(global.getGlobalVar(nome) != "") {
+                                                          nome = global.getGlobalVar(nome);
+                                                        }
+                                                        assina = nome + " = " + exp;
+                                                        instr.setInstrucao(assina, cont);
+                                                        bloco.addInstrucao(instr); .)
+  .
+
+	While                         (. String condicao; String whileStr=""; instr = new Instruction(); .) 
+  = "while" "("                 (. whileStr = "while "; .)
+  Condicao<out condicao>        (. whileStr += condicao; .) 
+  ")"                           (. whileStr += ":";
+                                   instr.setInstrucao(whileStr, cont);
+                                   bloco.addInstrucao(instr); .)
+  Instrucao                     
+  .
+
+// ARRUMAR
+	For                               (. String nome; String condicao; String assina; String forStr=""; .)
+  = "for" "("                       
+  Designador<out nome>              
+  Assinalamento<out assina, nome>
+  ";"                               (. instr = new Instruction(); .)
+  Condicao<out condicao>            (. forStr = "while " + condicao + ":";
+                                       instr.setInstrucao(forStr, cont);
+                                       bloco.addInstrucao(instr); .)
+  ";"                               (. String assinaAux = assina; .)
+  Designador<out nome>
+  Assinalamento<out assina, nome>   (. bloco.removeInstrucao(instr); .)
+  ")"                               (. Instruction copia = new Instruction();
+                                       cont+=1; .)
+  Instrucao                         (. copia.setInstrucao(assina, cont);
+                                       bloco.addInstrucao(copia);
+                                       cont-=1; .)
+  .
+
+	IfElse                            (. String condicao; String ifCond=""; instr = new Instruction(); .) 
+  = "if" "("                        (. ifCond="if "; .)
+  Condicao<out condicao>            (. ifCond+=condicao+":"; .)
+  ")"                               (. instr.setInstrucao(ifCond, cont);
+                                       bloco.addInstrucao(instr);
+                                       cont+=1; .)
+  Instrucao                         (. cont-=1; .)
+  ("else"                           (. instr = new Instruction(); 
+                                       String elseCond="else: ";
+                                       instr.setInstrucao(elseCond, cont);
+                                       bloco.addInstrucao(instr);
+                                       cont+=1; .)
+  Instrucao                         (. cont-=1; .)
+  | )
+  .
+
+	Return                  (. String exp; String retorno=""; instr = new Instruction(); .)
+  = "return"              (. retorno="return"; .)
+  ( Expr<out exp>         (. retorno+=" " + exp; .)
+  | 
+  ) 
+  ";"                     (. instr.setInstrucao(retorno, cont); 
+                             bloco.addInstrucao(instr); .)
+  .
+  
+	Printf                  (. String exp; String print=""; instr = new Instruction(); .)
+  = "printf" "("          (. print="print("; .)
+    ( strConst            (. print+=t.val; .)
+    | Expr<out exp>       (. print+=exp; .)
+    ) 
+    { ","                 (. print+=", "; .)
+    ( strConst            (. print+=t.val; .)
+    | Expr<out exp>       (. print+=exp; .)
+    ) 
+    } 
+    ")"                   (. print+=", end = '')"; .)
+    ";"                   (. instr.setInstrucao(print, cont); 
+                             bloco.addInstrucao(instr); .)
+  .
+
+	Parametros<out String param>     (. String exp; param=""; .)
+  = 
+  "("                              (. param="("; .)
+  [ Expr<out exp>                  (. param+=exp; .)
+  {"," Expr<out exp>               (. param+=", " + exp; .)
+  } 
+  ] 
+  ")"                               (. param+=")"; .)
+  .
+
+	Condicao<out String condicao>   (. String exp; condicao=""; String opRel; .)
+  = Expr<out exp>                 (. condicao+=exp; .)
+  OpRel<out opRel>                (. condicao+=" " + opRel + " "; .)
+  Expr<out exp>                   (. condicao+=exp; .)
+  .
+
+	OpRel<out String opRel>  (. opRel=""; .)
+  = "=="                   (. opRel="=="; .)
+    | "!="                 (. opRel="!="; .)
+    | ">"                  (. opRel=">"; .)
+    | ">="                 (. opRel=">="; .)
+    | "<"                  (. opRel="<"; .)
+    | "<="                 (. opRel="<="; .)
+  .
+
+  // 5 + 1 ou i - j
+	Expr<out String exp>          (. String term=""; exp=""; .)
+  = ( 
+    Termo<out term>             (. exp = term; .)
+    | "-" Termo<out term>       (. exp = " - " + term; .)
+    ) 
+    {( "+"                      (. exp += " + "; .)
+    | "-"                       (. exp += " - "; .)
+    ) 
+    Termo<out term>             (. exp += term; .)
+    }
+  .	
+
+  // 3 ou (3*i) ou 3/i ou 3%i
+	Termo<out String term>        (. String factor=""; term=""; .)
+  = Fator<out factor>           (. term = factor; .)
+      {(  "*"                   (. term += " * "; .)
+        | "/"                   (. term += " / "; .)
+        | "%"                   (. term += " % "; .)
+       ) Fator<out factor>      (. term += factor; .)
+      }
+  .
+
+  // funcaoTal() ou 3 ou (i) ou new int [len(v)] ou new int {1} 
+	Fator<out String factor>        (. String exp=""; String nome=""; factor=""; String param=""; .)
+  = Designador<out nome>          (. factor = nome; .)
+    [ Parametros<out param>       
+    ]                             (. factor += param; .)
+    | num                         (. factor = t.val; .)
+    | "(" Expr<out exp>           (. factor = "(" + exp; .)          
+      ")"                         (. factor += ")"; .) 
+    | "new" Tipo                  
+      ("[" 
+      Expr<out exp>               (. factor = "[0] * (" + exp + ")"; .)
+      "]" 
+    | "{"                         (. factor = "["; .)
+        num                       (. factor += t.val; .)
+        {"," 
+          num                     (. factor += ", " + t.val; .)
+        } 
+        "}"                       (. factor += "]"; .)
+        )
+  .
+
+  // v ou v[j]
+	Designador<out String nome>     (. String exp=""; .)
+   = id                           (. nome = t.val;
+                                     if(global.getGlobalVar(nome) != "") {
+                                        nome = global.getGlobalVar(nome);
+                                      } .) 
+   ["["                           (. nome += "["; .)
+   Expr<out exp>                  (. nome += exp; .)
+   "]"                            (. nome += "]"; .)
+   ]
+  .     
+
+END Python.

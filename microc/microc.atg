@@ -1,0 +1,462 @@
+/*
+	compilador v. 2019
+*/
+import java.util.List;
+import java.util.ArrayList;
+
+class NDesig {
+	String nome;
+	boolean vec;
+	public NDesig(String n, boolean v) {
+		nome = n;
+		vec = v;
+	}
+	public String getNome() {
+		return nome;
+	}
+	public boolean vetor() {
+		return vec;
+	}
+}
+
+COMPILER MicroC
+
+	private Tab ts;
+	private Obj ofuncAtual;
+
+	private Code objCode;
+
+	private Struct getTipo(String tipo, boolean vec) { 
+		Obj o = ts.buscar(tipo);
+		Struct st = o.tipo;
+		if (vec) st = new Struct(Struct.Vetor, o.tipo);
+		return st;	
+	}
+
+	public void erro(String msg) {
+		errors.SemErr(t.line, t.col, msg);
+	}
+
+CHARACTERS
+	semAspas 	= ANY - '"'.
+	letra 		= "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_".
+	digito 		= "0123456789".
+
+TOKENS
+	id 		    = letra {letra | digito}.
+	strConst 	= '"' {semAspas} '"'.
+	num 		= ['-'] digito { digito } .
+
+PRAGMAS
+	option = "$d".	(. ts.dump(); .)
+
+COMMENTS FROM "/*" TO "*/" NESTED
+
+IGNORE '\r' + '\n' + '\t'
+
+PRODUCTIONS
+
+	MicroC                      (. 	ofuncAtual = null;
+                                   	objCode = new Code();
+                                   	ts = new Tab(this);
+                                   	ts.abrirEscopo("Global");
+                                .)
+    = {DeclConst}
+      {Definicao}               (. 	objCode.setDataSize(ts.escopoAtual.nVars);
+                                   	ts.fecharEscopo(); .)
+	.
+
+    DeclConst                   (. 	String tipo; Obj o; .)
+    = "const"
+      Tipo<out tipo>            (. 	o = ts.buscar(tipo); .)
+      id                        (. 	o = ts.inserir(Obj.Const, t.val, o.tipo); .)
+      "=" num                   (. 	o.val = Integer.parseInt(t.val); .)
+      ";"
+	.
+
+	Definicao                   (. 	String tipo = ""; NDesig nd; .)
+    = ( Tipo<out tipo>
+      | "void"                  (. 	tipo = "void"; .)
+      ) 
+      DesigI<out nd>
+      ( DeclVar<tipo, nd>
+      | DeclFuncao<tipo, nd>
+      )
+	.
+
+	DeclVar<String tipo, 
+            NDesig nd>          (. 	NDesig ndi;
+                                   	Struct st = getTipo(tipo, nd.vetor());
+                                   	if (st == ts.semTipo)
+                                        erro("variavel nao pode ser void");
+                                .)
+    =                           (. 	ts.inserir(Obj.Var, nd.getNome(), st); .)
+      {"," DesigI<out ndi>      (. 	st = getTipo(tipo, ndi.vetor());
+                                   	ts.inserir(Obj.Var, ndi.getNome(), st);
+                                .)
+	  } ";"
+	.
+
+    DeclFuncao<String tipo, 
+               NDesig nd>       (. 	NDesig ndi; Struct st; .)
+    =                           (. 	ofuncAtual = ts.inserir(Obj.Func,
+                                   	nd.getNome(), getTipo(tipo, false));
+                                   	ts.abrirEscopo("Func " + nd.getNome());
+                                .)
+      "("                       (. 	if (nd.getNome().equals("main")) {
+                                        objCode.setMainPC();
+                                   	if (ofuncAtual.tipo != ts.semTipo)
+                                        erro("funcao main deve ser void");
+                                   	if (ofuncAtual.nPars != 0)
+                                        erro("main nao tem parametros");
+                                   	}
+                                .)
+	  [ Tipo<out tipo>
+        DesigI<out ndi>         (. 	st = getTipo(tipo, ndi.vetor());
+                                   	ts.inserir(Obj.Var, ndi.getNome(), st);
+                                   	ofuncAtual.nPars ++;
+                                .)
+		{"," Tipo<out tipo>
+             DesigI<out ndi>	(. 	st = getTipo(tipo, ndi.vetor());
+                                   	ts.inserir(Obj.Var, ndi.getNome(), st);
+                                   	ofuncAtual.nPars ++;
+                                .)
+        } 
+      ] ")"                     (. 	ofuncAtual.end = objCode.getPC();
+                                   	objCode.put(objCode.enter);
+                                   	objCode.put(ofuncAtual.nPars);
+                                   	int pcvars = objCode.getPC();
+                                   	objCode.put(0);
+                                .)
+      CBlock                    (. 	objCode.put(pcvars, ts.escopoAtual.nVars);
+                                   	if (ofuncAtual.tipo == ts.semTipo) {
+                                        objCode.put(objCode.exit);
+                                        objCode.put(objCode.return_);
+                                   	} else {
+                                        // fim da funcao alcancado
+                                        // sem instrucao return
+                                        objCode.put(objCode.trap);
+                                        objCode.put(1);
+                                   	}
+                                   	ofuncAtual.locais = ts.escopoAtual.locais;
+                                   	ts.fecharEscopo();
+                                .)
+	.
+	
+	Tipo<out String tipo> 	
+    = "int"                     (. 	tipo = t.val; .)
+	.		
+
+	DesigI<out NDesig n>        (. 	boolean vet = false; .)
+    = id                        (. 	String nome = t.val; .)
+      ["[" "]"                  (. 	vet = true; .)
+      ]                         (. 	n = new NDesig(nome, vet); .)
+	.
+
+	CBlock 		
+    = "{"
+      {Definicao | Instrucao}
+      "}"
+	.
+
+	Instrucao 					(. 	Operand op = null; int opr; .)
+    = Designador<out op>
+      ( Assinalamento<op>
+      | Parametros<op>          (. 	objCode.put(objCode.call);
+                                   	objCode.put2(op.end);
+                                   	if (op.tipo != ts.semTipo)
+								        objCode.put(objCode.pop);
+                                .)
+      ) ";"
+      | While
+      | For
+      | IfElse
+      | Switch
+      | Return
+      | Printf
+      | Scanf
+      | CBlock
+      | ";"
+    .
+
+	Assinalamento<Operand o1>	(. 	Operand o2 = null; .)
+    = "=" Expr<out o2>          (. 	if (o2.tipo.assinalavelPara(o1.tipo))
+								        objCode.assign(o1, o2);
+                                   	else
+								        erro("tipos incompativeis");
+                                .)
+	.
+
+	While 						(. 	int opr, end; .)
+    = "while"                   (. 	int top = objCode.getPC(); .)
+      "(" Condicao<out opr> ")"	(. 	end = objCode.putFalseJump(opr, 0); .)
+      Instrucao                 (. 	objCode.putJump(top);
+							       	objCode.fixup(end);
+                                .)
+	.
+
+	For                         (. 	int opr, end, end2; Operand op; .)
+    = "for"
+      "(" Designador<out op> 
+          Assinalamento<op> ";" (. 	int top = objCode.getPC(); .)
+          Condicao<out opr> ";" (. 	end = objCode.putFalseJump(opr, 0); // fim for
+                                   	end2 = objCode.putJump(0); // fim incremento
+                                   	int antes_incremento = objCode.getPC();
+                                .)
+          Designador<out op>
+          Assinalamento<op>
+      ")"                       (. 	objCode.putJump(top);
+							        objCode.fixup(end2);
+                                .)
+      Instrucao                 (. 	objCode.putJump(antes_incremento);
+                                   	objCode.fixup(end);
+                                .)
+	.
+
+	IfElse						(. 	int opr, end; .)
+    = "if"
+      "(" Condicao<out opr> ")" (. 	end = objCode.putFalseJump(opr, 0); .)
+      Instrucao
+      ("else"                   (. 	int end2 = objCode.putJump(0);
+                                   	objCode.fixup(end); .)
+        Instrucao               (. 	objCode.fixup(end2); .)
+      |                         (. 	objCode.fixup(end); .)
+      )
+	.
+
+	Switch                      (. 	Operand op = null;
+                                   	Obj osval = null;
+                                   	List<Integer> breaks = new ArrayList<Integer>();
+                                .)
+    = "switch"
+      "(" Designador<out op> 
+      ")"                       (.
+                                   	if (op.tipo.cat != Struct.Int)
+                                       erro("Seletor em switch deve ser variavel inteira");
+                                   	osval = ts.inserir(Obj.Var, "_sval_" 
+                                         + ts.escopoAtual.nVars, ts.tipoInt);
+                                   	objCode.load(op);
+                                   	objCode.put(objCode.store);
+                                   	objCode.put(osval.end);
+                                .)
+      "{"
+          CaseSt<osval, breaks>
+          { CaseSt<osval, breaks>
+          }
+          ( "default" ":"
+            { Instrucao }
+          |
+          )
+      "}"                       (.
+                                   	for (int i = 0; i < breaks.size(); i ++)
+                                       objCode.fixup((int)breaks.get(i));
+                                .)
+	.
+    CaseSt<Obj osval, 
+           List breaks>
+    = "case"                    (. 	objCode.load(new Operand(osval)); .)
+      num                       (. 	Operand option = new Operand(Integer.parseInt(t.val));
+                                   	objCode.load(option);
+                                   	int endCase = objCode.putFalseJump(objCode.eq, 0);
+                                .)
+      ":"
+      Instrucao
+      { Instrucao }             (. 	int endSwitch = objCode.putJump(0);
+                                   	breaks.add(new Integer(endSwitch));
+                                   	objCode.fixup(endCase);
+                                .)
+    .
+
+	Return 						(. 	Operand op = null; .)
+    = "return" (Expr<out op> 	(. 	objCode.load(op);
+                                   	if (ofuncAtual.tipo == ts.semTipo)
+								        erro("funcao void nao deve retornar valor");
+                                   	else if (!op.tipo.assinalavelPara(ofuncAtual.tipo))
+								        erro("valor retornado incompativel com tipo da funcao");
+                                .)
+      |                         (. 	if (ofuncAtual.tipo != ts.semTipo)
+								        erro("return deveria retornar um valor"); .)
+      )                         (. 	objCode.put(Code.exit);
+							       	objCode.put(Code.return_); .)
+      ";"
+	.
+
+	Printf						(. 	String s; Operand op; .)
+    = "printf"
+      "(" ( strConst            (. 	s = t.val.substring(1, t.val.length() - 1);
+							       	objCode.putPrintStrz(s); .)
+          | Expr<out op>		(. 	objCode.load(op);
+							       	objCode.put(objCode.printi); .)
+          )
+        {","
+          (  strConst           (. 	s = t.val.substring(1, t.val.length() - 1);
+                                   	objCode.putPrintStrz(s); .)
+          | Expr<out op>		(. 	objCode.load(op);
+                                   	objCode.put(objCode.printi); .)
+          )
+        }
+      ")" ";"
+	.
+
+  Scanf						    (. 	Operand op;  int i; .)
+    = "scanf" "(" 
+      Designador<out op> ")"	(.	objCode.put(objCode.scani); 
+      							    objCode.store(op);
+							    .)
+	  ";"
+	.
+
+	Parametros<Operand op>		(. 	Operand oppar; .)
+    = "("                       (. 	if (op.cat != Operand.Func) {
+								    	erro("nao é uma função");
+                                    	op.obj = ts.semObj;
+                                   	}
+                                   	int preais = 0;
+                                   	int pdecl = op.obj.nPars;
+                                   	Obj fp = op.obj.locais;
+                                .)
+	  [ Expr<out oppar> 		(.  objCode.load(oppar);
+							        preais ++;
+							        if (fp != null) {
+									    if (!oppar.tipo.assinalavelPara(fp.tipo))
+                                            erro("tipo de parametro incompativel");
+								        fp = fp.prox;
+							        } 
+                                .)
+	  {"," Expr<out oppar>		(. 	objCode.load(oppar);
+							        preais ++;
+							        if (fp != null) {
+								        if (!oppar.tipo.assinalavelPara(fp.tipo))
+                                        	erro("tipo de parametro incompativel");
+								        fp = fp.prox;
+                                   	}
+                                .)
+      } ]                       (. 	if (preais > pdecl)
+								        erro("mais parametros passados que declarados");
+                                   	else if (preais < pdecl)
+								        erro("menos parametros passados que declarados"); 
+                                .)
+	  ")"
+	.
+
+	Condicao<out int opr>		(. 	Operand opx, opy; opx = opy = null; .)
+    = Expr<out opx>             (. 	objCode.load(opx); .)
+      OpRel<out opr>
+      Expr<out opy>             (. 	objCode.load(opy);
+                                   	if (! opx.tipo.compativelCom(opy.tipo))
+							            erro("tipos incompativeis");
+                                   	if (opx.tipo.tipoPassadoReferencia()
+                                       	&& opr != objCode.eq
+							            && opr != objCode.ne)
+							   	        erro("comparacao invalida");
+                                .)
+	.
+
+	OpRel<out int opr> 			(. 	opr = -1; .)
+    =   "=="                    (. 	opr = objCode.eq; .)
+      | "!="                    (. 	opr = objCode.ne; .)
+      | ">"                     (. 	opr = objCode.gt; .)
+      | ">="                    (. 	opr = objCode.ge; .)
+      | "<"                     (. 	opr = objCode.lt; .)
+      | "<="                    (. 	opr = objCode.le; .)
+	.
+
+	Expr<out Operand op>		(. 	Operand op2; int opr; op = null; .)
+    = ( Termo<out op>
+      | "-" Termo<out op>		(. 	if (op.tipo != ts.tipoInt)
+                                       	erro("operando deve ser do tipo int");
+							        if (op.cat == Operand.Const)
+								        op.val = -op.val;
+                                   	else {
+							   	        objCode.load(op);
+								        objCode.put(objCode.neg);
+							        }
+                                .)
+      ) {( "+"                  (. 	opr = objCode.add; .)
+         | "-"                  (. 	opr = objCode.sub; .)
+         )                      (. 	objCode.load(op); .)
+         Termo<out op2>         (. 	objCode.load(op2);
+                                   	if (op.tipo != ts.tipoInt || op2.tipo != ts.tipoInt)
+							   	        erro("operandos devem ser do tipo int");
+                                   	objCode.put(opr);
+                                .)
+        }
+	.	
+
+	Termo<out Operand op>		(. 	Operand op2; int opr; op = null; .)
+    = Fator<out op>
+      {(  "*"                   (. 	opr = objCode.mul; .)
+        | "/"                   (. 	opr = objCode.div; .)
+        | "%"                   (. 	opr = objCode.rem; .)
+       )                        (. 	objCode.load(op); .)
+       Fator<out op2>			(. 	objCode.load(op2);
+                                   	if (op.tipo != ts.tipoInt || op2.tipo != ts.tipoInt)
+							   	        erro("operandos devem ser do tipo int");
+                                   	objCode.put(opr);
+                                .)
+       }
+	.
+
+	Fator<out Operand op>		(. 	op = null; List<Integer> list = null; String tp; .)
+    =  Designador<out op>
+       [ Parametros<op> 		(.
+                                   	if (op.tipo == ts.semTipo)
+								        erro("função de tipo void usada em expressão");
+                                   	if (op.obj == ts.objTamVetor)
+								    	objCode.put(objCode.arraylength);
+                                   	else {
+								        objCode.put(objCode.call);
+								        objCode.put2(op.end);
+                                   	}
+                                   	op.cat = Operand.Stack;
+                                .)
+        ]
+      | num                     (. 	op = new Operand(Integer.parseInt(t.val)); .)
+      | "(" Expr<out op> ")"
+      | "new" Tipo<out tp>		(. 	Obj obj = ts.buscar(tp);
+                                   	list = new ArrayList<Integer>(); .)
+        ("[" Expr<out op> "]"	(. 	if (op.tipo != ts.tipoInt)
+								        erro("tamanho do vetor deve ser tipo int");
+                                   	objCode.load(op);
+                                .)
+        | "{" num               (. 	list.add(Integer.parseInt(t.val)); .)
+		  {"," num              (. 	list.add(Integer.parseInt(t.val)); .)
+		  } "}"                 (. 	op = new Operand(list.size());
+							    	objCode.load(op); .)
+        )                       (. 	objCode.put(Code.newarray);
+                                   	op.tipo = new Struct(Struct.Vetor, obj.tipo);
+                                   	if (list.size() > 0) {
+								    	obj = ts.inserir(Obj.Var, "_end_" 
+                                           	+ ts.escopoAtual.nVars, ts.tipoInt);
+								        objCode.put(objCode.store);
+								        objCode.put(obj.end);
+								        objCode.load(new Operand(obj));
+                                   	}
+                                   	for (int i = 0; i < list.size(); i ++) {
+								        objCode.load(new Operand(obj));
+								        objCode.load(new Operand(i));
+								        objCode.load(new Operand((int)list.get(i)));
+								        objCode.put(objCode.astore);
+                                   	}
+                                .)
+	.
+
+	Designador<out Operand op>	(. 	op = null; Operand opIdx = null; .)
+			= id 				(. 	String nome = t.val;   
+                                   	op = new Operand(ts.buscar(nome));
+                                .)
+			["[" 				(. 	objCode.load(op); .)
+			Expr<out opIdx>		(.  if (op.tipo.cat == Struct.Vetor) {
+		   						      	if (opIdx.tipo.cat != Struct.Int)
+									        erro("indice deve ser do tipo int");
+			   					    	objCode.load(opIdx);
+	 	   						        op.cat = Operand.Elem;
+		   						        op.tipo = op.tipo.tipoElemento;
+                                    } else
+								        erro(nome + " nao é um vetor");
+                                .)
+			"]"]						
+	.
+
+END MicroC.
+
